@@ -103,11 +103,13 @@ function RatioAnalysisTable({ ratios, recipes }: RatioAnalysisTableProps) {
                             <div
                               class="ratio-value"
                               onMouseEnter={(e) => {
+                                // @ts-ignore
                                 const details = e.currentTarget.querySelector(
                                   ".ratio-details",
                                 ) as HTMLElement;
                                 if (details) {
                                   const rect =
+                                    // @ts-ignore
                                     e.currentTarget.getBoundingClientRect();
                                   const spaceBelow =
                                     window.innerHeight - rect.bottom;

@@ -2,11 +2,67 @@ import OpenAI from "openai";
 import { zodResponseFormat } from "openai/helpers/zod";
 import { z } from "zod";
 import { evaluate } from "mathjs";
+import { traceable } from "langsmith/traceable";
+import { wrapOpenAI } from "langsmith/wrappers";
 import util from "util";
 util.inspect.defaultOptions.depth = null;
 
-export const openai = new OpenAI();
+export const openai = wrapOpenAI(new OpenAI());
 const model = "gpt-4o-mini-2024-07-18";
+
+export const analyzeRecipesForRatios = traceable(
+  async (recipeTexts: string[]) => {
+    console.log("parsing recipes");
+    const recipes = await Promise.all(
+      recipeTexts.map(async (recipeText) => {
+        const parsedRecipe = await parseRecipe(recipeText);
+        if ("error" in parsedRecipe) {
+          return parsedRecipe;
+        }
+        const parsedIngredients = await Promise.all(
+          parsedRecipe.ingredients.map(async (ingredient) =>
+            parseIngredient(ingredient),
+          ),
+        );
+        return {
+          ...parsedRecipe,
+          ingredients: parsedIngredients,
+        };
+      }),
+    );
+
+    console.log("suggesting ratios");
+    const ratiosToAnalyze = await suggestRatios(
+      recipes.filter((r) => !("error" in r)),
+    );
+
+    console.log("analyzing ratios");
+    const recipesWithRatios = await Promise.all(
+      recipes.map(async (recipe) => {
+        if ("error" in recipe) return recipe;
+        const ratios = Object.fromEntries(
+          await Promise.all(
+            ratiosToAnalyze.map(async (ratio) => {
+              return [
+                ratio.name,
+                await analyzeRatio(recipe.ingredients, ratio),
+              ] as const;
+            }),
+          ),
+        );
+        return {
+          ...recipe,
+          ratios,
+        };
+      }),
+    );
+
+    return {
+      recipes: recipesWithRatios,
+      ratiosToAnalyze,
+    };
+  },
+);
 
 function withError<T>(schema: z.ZodType<T>) {
   return z.object({
