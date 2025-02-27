@@ -15,9 +15,13 @@ type IngredientResult = NonNullable<
 
 type ParsedIngredientProps = {
   ingredient: IngredientResult;
+  showConversion?: boolean;
 };
 
-function ParsedIngredient({ ingredient }: ParsedIngredientProps) {
+function ParsedIngredient({
+  ingredient,
+  showConversion,
+}: ParsedIngredientProps) {
   const [showOriginal, setShowOriginal] = useState(true);
 
   if ("error" in ingredient) {
@@ -30,6 +34,9 @@ function ParsedIngredient({ ingredient }: ParsedIngredientProps) {
     return (
       <div class="ingredient" onClick={toggleView}>
         {ingredient.originalText}
+        {showConversion && ingredient.inGrams && (
+          <span class="notes">({ingredient.inGrams.toFixed(0)}g)</span>
+        )}
       </div>
     );
   }
@@ -45,15 +52,126 @@ function ParsedIngredient({ ingredient }: ParsedIngredientProps) {
         <span class="prep">{ingredient.preparation}</span>
       )}
       {ingredient.notes && <span class="notes">{ingredient.notes}</span>}
-      {ingredient.expressionConvertingToMassInGrams && (
+      {ingredient.expressionConvertingToMassInGrams && ingredient.inGrams && (
         <span class="notes">
-          {ingredient.expressionConvertingToMassInGrams}
+          {ingredient.expressionConvertingToMassInGrams} ={" "}
+          {ingredient.inGrams.toFixed(0)}g
         </span>
       )}
-      {ingredient.inGrams && (
-        <span class="notes">In grams: {ingredient.inGrams}</span>
-      )}
       {"error" in ingredient && <span class="error">{ingredient.error}</span>}
+    </div>
+  );
+}
+
+type RatioAnalysisTableProps = {
+  ratios: NonNullable<ComparisonResponse>["ratiosToAnalyze"];
+  recipes: NonNullable<ComparisonResponse>["recipes"];
+};
+
+function RatioAnalysisTable({ ratios, recipes }: RatioAnalysisTableProps) {
+  return (
+    <div class="ratio-analysis">
+      <h3>Ratio Analysis</h3>
+      <div class="ratio-table-container">
+        <table class="ratio-table">
+          <thead>
+            <tr>
+              <th>Recipe</th>
+              {ratios.map((ratio) => (
+                <th key={ratio.name}>{ratio.name}</th>
+              ))}
+            </tr>
+            <tr>
+              <td></td>
+              {ratios.map((ratio) => (
+                <td key={ratio.name}>{ratio.description}</td>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {recipes.map(
+              (recipe, recipeIndex) =>
+                !("error" in recipe) && (
+                  <tr key={recipeIndex}>
+                    <td>{recipe.name}</td>
+                    {ratios.map((ratio) => {
+                      const ratioResult = recipe.ratios[ratio.name];
+                      return (
+                        <td key={ratio.name} class="ratio-cell">
+                          {ratioResult?.ratioValue !== undefined &&
+                          ratioResult.ratioValue !== null ? (
+                            <div
+                              class="ratio-value"
+                              onMouseEnter={(e) => {
+                                const details = e.currentTarget.querySelector(
+                                  ".ratio-details",
+                                ) as HTMLElement;
+                                if (details) {
+                                  const rect =
+                                    e.currentTarget.getBoundingClientRect();
+                                  const spaceBelow =
+                                    window.innerHeight - rect.bottom;
+                                  const spaceRight =
+                                    window.innerWidth - rect.right;
+
+                                  // Position the details box
+                                  details.style.top =
+                                    spaceBelow > 300
+                                      ? `${rect.bottom + 10}px`
+                                      : `${rect.top - 10}px`;
+                                  details.style.left =
+                                    spaceRight > 400
+                                      ? `${rect.right + 10}px`
+                                      : `${rect.left - 310}px`;
+                                  details.style.transform =
+                                    spaceBelow > 300
+                                      ? "none"
+                                      : "translateY(-100%)";
+                                }
+                              }}
+                            >
+                              {ratioResult.ratioValue.toFixed(2)}
+                              <div class="ratio-details">
+                                <strong>Numerator:</strong>
+                                <ul>
+                                  {ratioResult.numeratorIngredients.map(
+                                    (ing, i) => (
+                                      <li key={i}>
+                                        <ParsedIngredient
+                                          ingredient={ing}
+                                          showConversion={true}
+                                        />
+                                      </li>
+                                    ),
+                                  )}
+                                </ul>
+                                <strong>Denominator:</strong>
+                                <ul>
+                                  {ratioResult.denominatorIngredients.map(
+                                    (ing, i) => (
+                                      <li key={i}>
+                                        <ParsedIngredient
+                                          ingredient={ing}
+                                          showConversion={true}
+                                        />
+                                      </li>
+                                    ),
+                                  )}
+                                </ul>
+                              </div>
+                            </div>
+                          ) : (
+                            <span class="no-ratio">-</span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ),
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
@@ -195,7 +313,7 @@ function App() {
 
   return (
     <div class="container">
-      <h1>Cookie Recipe Comparison</h1>
+      <h1>Recipe Ratio Comparison</h1>
 
       <div class="recipe-inputs">
         {recipeTexts.map((text, index) => (
@@ -237,6 +355,13 @@ function App() {
       {comparisonResult && (
         <div class="comparison-results">
           <h2>Comparison Results</h2>
+          {comparisonResult.ratiosToAnalyze &&
+            comparisonResult.recipes.some((r) => !("error" in r)) && (
+              <RatioAnalysisTable
+                ratios={comparisonResult.ratiosToAnalyze}
+                recipes={comparisonResult.recipes}
+              />
+            )}
           {comparisonResult.recipes.map((recipe, index) => (
             <ParsedRecipe key={index} recipe={recipe} />
           ))}
@@ -246,7 +371,7 @@ function App() {
       <style>{`
         .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
         .recipe-inputs { display: flex; flex-wrap: wrap; gap: 20px; margin-bottom: 20px; }
-        .recipe-input { flex: 1; min-width: 300px; }
+        .recipe-input { flex: 1; min-width: 300px; }    
         .actions { margin-bottom: 30px; }
         .actions button { margin-right: 10px; }
         .recipe-result { margin-bottom: 30px; padding: 20px; border: 1px solid #ddd; border-radius: 5px; }
@@ -261,6 +386,55 @@ function App() {
         .ingredient.parsed .prep { background: #f3e5f5; }
         .ingredient.parsed .notes { background: #fce4ec; }
         textarea { width: 100%; margin-bottom: 10px; }
+        .ratio-analysis { margin: 20px 0; position: relative; }
+        .ratio-table-container { 
+          overflow-x: auto; 
+          margin-bottom: 20px; /* Space for potential overflow of ratio details */
+        }
+        .ratio-table { 
+          width: 100%; 
+          border-collapse: collapse; 
+          margin: 10px 0; 
+        }
+        .ratio-table th, .ratio-table td { 
+          border: 1px solid #ddd; 
+          padding: 8px; 
+          text-align: left;
+        }
+        .ratio-table th { 
+          background: #f5f5f5;
+        }
+        .ratio-cell { 
+          position: static; /* Changed from relative to allow details to position relative to table container */
+        }
+        .ratio-value { 
+          cursor: pointer; 
+          position: relative; /* Make this relative so we can position the tooltip relative to the value */
+          display: inline-block; /* Ensure the value doesn't take full width */
+        }
+        .ratio-value:hover .ratio-details { 
+          display: block; 
+          opacity: 1;
+          visibility: visible;
+        }
+        .ratio-details { 
+          display: block;
+          visibility: hidden;
+          opacity: 0;
+          position: fixed; /* Fixed positioning relative to viewport */
+          background: white;
+          border: 1px solid #ddd;
+          padding: 10px;
+          border-radius: 4px;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+          z-index: 1000;
+          min-width: 300px;
+          max-width: 400px;
+          max-height: 80vh; /* Maximum height relative to viewport */
+          overflow-y: auto; /* Allow scrolling if content is too tall */
+          transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
+        }
+        .no-ratio { color: #999; }
         .random-recipe-btn { 
           display: block;
           margin-bottom: 20px;

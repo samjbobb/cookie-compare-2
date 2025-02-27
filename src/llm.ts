@@ -58,7 +58,21 @@ const IngredientSchema = z.object({
   expressionConvertingToMassInGrams: z.string().optional(),
 });
 
-export async function parseIngredient(ingredient: string) {
+interface ParsedIngredient {
+  originalText: string;
+  error?: string;
+  quantity?: string;
+  unit?: string;
+  product?: string;
+  preparation?: string;
+  notes?: string;
+  expressionConvertingToMassInGrams?: string;
+  inGrams?: number;
+}
+
+export async function parseIngredient(
+  ingredient: string,
+): Promise<ParsedIngredient> {
   const completion = await openai.beta.chat.completions.parse({
     model,
     messages: [
@@ -118,27 +132,162 @@ export async function parseIngredient(ingredient: string) {
   });
   const out = completion.choices[0].message.parsed;
   if (out === null) {
-    return { error: "Failed to parse" };
+    return { originalText: ingredient, error: "Failed to parse" };
   } else if (out.error) {
-    return { error: out.error };
-  } else if (!out.data) {
-    return { error: "Failed to parse" };
+    return { originalText: ingredient, error: out.error };
   }
   return {
-    ...out.data,
     originalText: ingredient,
-    inGrams: evaluateExpressionToGrams(
-      out.data.expressionConvertingToMassInGrams,
-    ),
+    ...(out.data ?? {}),
+    inGrams: out.data
+      ? evaluateExpressionToGrams(out.data.expressionConvertingToMassInGrams)
+      : undefined,
   };
 }
 
 function evaluateExpressionToGrams(expression?: string) {
   if (!expression) return;
   try {
-    return evaluate(expression).toNumber("g");
+    return evaluate(expression).toNumber("g") as number;
   } catch (e) {
     console.error("Failed to evaluate expression", expression, e);
     return;
   }
+}
+
+const RatioDescriptionListSchema = z.object({
+  ratios: z.array(
+    z.object({
+      name: z.string(),
+      description: z.string(),
+    }),
+  ),
+});
+
+export async function suggestRatios(
+  recipes: { name: string; ingredients: { originalText: string }[] }[],
+) {
+  const formatIngredients = (ingredients: { originalText: string }[]) =>
+    ingredients.map((i) => `* ${i.originalText}`).join("\n");
+
+  const formattedRecipes = recipes
+    .map((r) => `# ${r.name}\n${formatIngredients(r.ingredients)}`)
+    .join("\n\n");
+
+  const completion = await openai.beta.chat.completions.parse({
+    model,
+    messages: [
+      {
+        role: "developer",
+        content: [
+          "Given the following list of recipes, suggest a list of ratios to analyze the similarities and differences between the recipes. ",
+          "For example, if the recipes are for cakes, you might suggest a ratio of flour to sugar. ",
+          "Provide a short name and a longer description for each ratio. ",
+          "If there are no suitable ratios, return an empty array.",
+        ].join("\n"),
+      },
+      {
+        role: "user",
+        content: formattedRecipes,
+      },
+    ],
+
+    response_format: zodResponseFormat(
+      RatioDescriptionListSchema,
+      "RatioDescriptionListSchema",
+    ),
+  });
+  const out = completion.choices[0].message.parsed;
+  if (out === null) {
+    return [];
+  }
+  return out.ratios;
+}
+
+export async function analyzeRatio(
+  ingredients: ParsedIngredient[],
+  ratio: { name: string; description: string },
+) {
+  const ingredientsList = ingredients
+    .map(
+      (ingredient, idx) => `Ingredient ${idx + 1}: ${ingredient.originalText}`,
+    )
+    .join("\n");
+
+  const formattedRatio = `## ${ratio.name}\n${ratio.description}\n`;
+
+  const devMessage = [
+    "Given the following ratio and list of ingredients, identify which ingredients make up the numerator and which are part of the denominator. ",
+    "Return the indexes of the ingredients in the numerator and denominator as arrays.",
+    "Use 1-based indexing. The first ingredient is index 1.",
+    "If there are no ingredients for a ratio, return an empty array.",
+  ].join("\n");
+
+  const userMessage = `# Recipe\n${ingredientsList}\n\n# Ratio\n${formattedRatio}`;
+
+  const completion = await openai.beta.chat.completions.parse({
+    model,
+    messages: [
+      {
+        role: "developer",
+        content: devMessage,
+      },
+      {
+        role: "user",
+        content: userMessage,
+      },
+    ],
+    response_format: zodResponseFormat(
+      z.object({
+        numeratorIngredientNumbers: z.array(z.number()),
+        denominatorIngredientNumbers: z.array(z.number()),
+      }),
+      "RatioAnalysisSchema",
+    ),
+  });
+  const out = completion.choices[0].message.parsed;
+  if (out === null) {
+    return;
+  }
+
+  // console.log("Ratio Analysis", { devMessage, userMessage, out });
+
+  const numeratorIngredients = out.numeratorIngredientNumbers
+    .map((idx) => {
+      const zeroBasedIdx = idx - 1;
+      if (zeroBasedIdx < 0 || zeroBasedIdx >= ingredients.length) {
+        console.log("Index out of range", { zeroBasedIdx, ingredients });
+        return null;
+      }
+      return ingredients[zeroBasedIdx];
+    })
+    .filter(Boolean) as ParsedIngredient[];
+  const denominatorIngredients = out.denominatorIngredientNumbers
+    .map((idx) => {
+      const zeroBasedIdx = idx - 1;
+      if (zeroBasedIdx < 0 || zeroBasedIdx >= ingredients.length) {
+        console.log("Index out of range", { zeroBasedIdx, ingredients });
+        return null;
+      }
+      return ingredients[zeroBasedIdx];
+    })
+    .filter(Boolean) as ParsedIngredient[];
+
+  let ratioValue: number | null = null;
+  if (numeratorIngredients.length && denominatorIngredients.length) {
+    const numerator = numeratorIngredients.reduce((acc, ingredient) => {
+      return acc + (ingredient.inGrams || 0);
+    }, 0);
+    const denominator = denominatorIngredients.reduce((acc, ingredient) => {
+      return acc + (ingredient.inGrams || 0);
+    }, 0);
+
+    ratioValue = numerator / denominator;
+  }
+
+  return {
+    ratioValue,
+    numeratorIngredients,
+    denominatorIngredients,
+  };
 }

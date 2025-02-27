@@ -1,7 +1,12 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
-import { parseIngredient, parseRecipe } from "./llm";
+import {
+  analyzeRatio,
+  parseIngredient,
+  parseRecipe,
+  suggestRatios,
+} from "./llm";
 import { logger } from "hono/logger";
 
 const app = new Hono();
@@ -18,6 +23,7 @@ const routes = app.post(
   async (c) => {
     const { recipeTexts } = c.req.valid("json");
 
+    console.log("parsing recipes");
     const recipes = await Promise.all(
       recipeTexts.map(async (recipeText) => {
         const parsedRecipe = await parseRecipe(recipeText);
@@ -36,8 +42,35 @@ const routes = app.post(
       }),
     );
 
+    console.log("suggesting ratios");
+    const ratiosToAnalyze = await suggestRatios(
+      recipes.filter((r) => !("error" in r)),
+    );
+
+    console.log("analyzing ratios");
+    const recipesWithRatios = await Promise.all(
+      recipes.map(async (recipe) => {
+        if ("error" in recipe) return recipe;
+        const ratios = Object.fromEntries(
+          await Promise.all(
+            ratiosToAnalyze.map(async (ratio) => {
+              return [
+                ratio.name,
+                await analyzeRatio(recipe.ingredients, ratio),
+              ] as const;
+            }),
+          ),
+        );
+        return {
+          ...recipe,
+          ratios,
+        };
+      }),
+    );
+
     return c.json({
-      recipes,
+      recipes: recipesWithRatios,
+      ratiosToAnalyze,
     });
   },
 );
