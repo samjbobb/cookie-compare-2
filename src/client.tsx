@@ -18,7 +18,7 @@ type ParsedIngredientProps = {
 };
 
 function ParsedIngredient({ ingredient }: ParsedIngredientProps) {
-  const [showOriginal, setShowOriginal] = useState(false);
+  const [showOriginal, setShowOriginal] = useState(true);
 
   if ("error" in ingredient) {
     return <div class="error">{ingredient.error}</div>;
@@ -45,6 +45,15 @@ function ParsedIngredient({ ingredient }: ParsedIngredientProps) {
         <span class="prep">{ingredient.preparation}</span>
       )}
       {ingredient.notes && <span class="notes">{ingredient.notes}</span>}
+      {ingredient.expressionConvertingToMassInGrams && (
+        <span class="notes">
+          {ingredient.expressionConvertingToMassInGrams}
+        </span>
+      )}
+      {ingredient.inGrams && (
+        <span class="notes">In grams: {ingredient.inGrams}</span>
+      )}
+      {"error" in ingredient && <span class="error">{ingredient.error}</span>}
     </div>
   );
 }
