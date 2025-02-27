@@ -32,9 +32,16 @@ export const analyzeRecipesForRatios = traceable(
     );
 
     console.log("suggesting ratios");
-    const ratiosToAnalyze = await suggestRatios(
-      recipes.filter((r) => !("error" in r)),
+    const validRecipes = recipes.filter(
+      (
+        recipe,
+      ): recipe is {
+        ingredients: ParsedIngredient[];
+        name: string;
+        instructions: string[];
+      } => !("error" in recipe),
     );
+    const ratiosToAnalyze = await suggestRatios(validRecipes);
 
     console.log("analyzing ratios");
     const recipesWithRatios = await Promise.all(
