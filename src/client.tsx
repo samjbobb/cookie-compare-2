@@ -35,7 +35,7 @@ function ParsedIngredient({
       <div class="ingredient" onClick={toggleView}>
         {ingredient.originalText}
         {showConversion && ingredient.inGrams && (
-          <span class="notes">({ingredient.inGrams.toFixed(0)}g)</span>
+          <span class="notes"> ({ingredient.inGrams.toFixed(0)}g)</span>
         )}
       </div>
     );
@@ -84,7 +84,7 @@ function RatioAnalysisTable({ ratios, recipes }: RatioAnalysisTableProps) {
             <tr>
               <td></td>
               {ratios.map((ratio) => (
-                <td key={ratio.name}>{ratio.description}</td>
+                <td key={ratio.name} style={{ fontSize: "0.8em" }}>{ratio.description}</td>
               ))}
             </tr>
           </thead>
@@ -294,6 +294,8 @@ function App() {
   const [recipeTexts, setRecipeTexts] = useState<string[]>(["", ""]);
   const [comparisonResult, setComparisonResult] =
     useState<ComparisonResponse | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+
 
   const handleRecipeChange = (index: number, value: string) => {
     const newRecipes = [...recipeTexts];
@@ -306,11 +308,18 @@ function App() {
   };
 
   const compareRecipes = async () => {
-    const response = await client.api["compare-recipes"].$post({
-      json: { recipeTexts },
-    });
-    const data = await response.json();
-    setComparisonResult(data);
+    setIsLoading(true);
+    try {
+      const response = await client.api["compare-recipes"].$post({
+        json: { recipeTexts },
+      });
+      const data = await response.json();
+      setComparisonResult(data);
+    } catch (error) {
+      console.error('Error comparing recipes:', error);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -350,9 +359,17 @@ function App() {
       </div>
 
       <div class="actions">
-        <button onClick={addRecipe}>Add Another Recipe</button>
-        <button onClick={compareRecipes}>Save and Compare</button>
+        <button onClick={addRecipe} disabled={isLoading}>Add Another Recipe</button>
+        <button onClick={compareRecipes} disabled={isLoading}>
+          {isLoading ? 'Comparing...' : 'Save and Compare'}
+        </button>
       </div>
+      {isLoading && (
+        <div class="loading-overlay">
+          <div class="loading-spinner"></div>
+          <div class="loading-text">Analyzing recipes...</div>
+        </div>
+      )}
 
       {comparisonResult && (
         <div class="comparison-results">
@@ -392,6 +409,45 @@ function App() {
         .ratio-table-container { 
           overflow-x: auto; 
           margin-bottom: 20px; /* Space for potential overflow of ratio details */
+        }
+
+        .loading-overlay {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          background: rgba(255, 255, 255, 0.9);
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          z-index: 1000;
+        }
+
+        .loading-spinner {
+          width: 50px;
+          height: 50px;
+          border: 4px solid #f3f3f3;
+          border-top: 4px solid #3498db;
+          border-radius: 50%;
+          animation: spin 1s linear infinite;
+        }
+
+        .loading-text {
+          margin-top: 20px;
+          font-size: 18px;
+          color: #333;
+        }
+
+        @keyframes spin {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+
+        button:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
         }
         .ratio-table { 
           width: 100%; 

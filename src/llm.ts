@@ -180,6 +180,10 @@ export async function parseIngredient(
           "Math.js cannot handle `1 1/2` as a number. You should convert it to a decimal.",
           "Ingredient: `1 1/2 cup flour`",
           "Parsed: { quantity: '1.5', unit: 'cup', product: 'flour', expressionConvertingToMassInGrams: '1.5 cup * (120 grams / 1 cup)' }",
+          "Example 7:",
+          "Math.js cannot handle single characters fraction glyphs like  ⅓, you should them as plain text fractions.",
+          "Ingredient: `⅓ cup flour`",
+          "Parsed: { quantity: '1/3', unit: 'cup', product: 'flour', expressionConvertingToMassInGrams: '1/3 cup * (120 grams / 1 cup)' }",
         ].join("\n"),
       },
       {
